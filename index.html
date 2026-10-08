@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111317" />
+  <meta name="description" content="Low-latency 2-player guitar jamming in the browser." />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <title>JamLink</title>
+</head>
+<body>
+  <header class="top">
+    <a href="#/" class="brand"><span class="dot"></span>JamLink</a>
+    <nav><a href="#/guide">Hookup guide</a></nav>
+  </header>
+
+  <main>
+    <!-- HOME -->
+    <section id="home" class="screen">
+      <h1>Jam with one friend, in real time.</h1>
+      <p class="lead">Browser-only, peer-to-peer, uncompressed audio. Built to keep the delay between you under <b>60&nbsp;ms</b>.</p>
+      <div class="card">
+        <button id="create" class="primary big">Create a room</button>
+        <div class="or">or join one</div>
+        <form id="join-form" class="row">
+          <input id="join-code" placeholder="ROOM CODE" maxlength="7" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+          <button type="submit">Join</button>
+        </form>
+        <p id="home-error" class="error" hidden></p>
+      </div>
+      <ul class="tips">
+        <li>Wired headphones. Bluetooth adds 150–300&nbsp;ms.</li>
+        <li>5&nbsp;GHz Wi-Fi close to the router, or Ethernet for a laptop.</li>
+        <li>Chrome on Android, or Chrome/Firefox on a laptop.</li>
+      </ul>
+    </section>
+
+    <!-- SETUP -->
+    <section id="setup" class="screen" hidden>
+      <h2>Set up <span class="room-tag" data-room></span></h2>
+      <div class="card" id="start-card">
+        <p>JamLink needs your microphone or USB input. Echo cancellation, noise suppression and auto gain stay off so your tone is untouched.</p>
+        <button id="start-audio" class="primary big">Start audio</button>
+        <p id="setup-error" class="error" hidden></p>
+      </div>
+
+      <div id="setup-body" hidden>
+        <div class="card">
+          <h3>Input</h3>
+          <label>Hookup
+            <select id="preset">
+              <option value="code-usb">CODE USB (OTG cable)</option>
+              <option value="code-phones">CODE phones out → mic input</option>
+              <option value="phone-mic">Phone mic near the amp</option>
+            </select>
+          </label>
+          <p id="preset-hint" class="hint"></p>
+          <label>Device <select id="input-device"></select></label>
+          <label>Gain <input id="gain" type="range" min="0" max="4" step="0.05" value="1" /></label>
+          <div class="meter"><div id="meter-bar"></div><span id="clip" class="clip">CLIP</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Output</h3>
+          <label id="sink-row">Device <select id="output-device"></select></label>
+          <p id="ios-note" class="hint" hidden>On iPhone, pick the output in Control Center (AirPlay icon). Wired is best.</p>
+          <label class="check"><input id="monitor" type="checkbox" /> Hear myself through the phone (off if the amp already monitors)</label>
+          <p id="bt-warning" class="warn" hidden>Bluetooth adds ~150–300&nbsp;ms. Use wired headphones or the amp's AUX for tight playing.</p>
+        </div>
+
+        <div class="card">
+          <h3>Device latency test</h3>
+          <p class="hint">Plays 6 clicks and listens for them. Hold the phone near its speaker, or loop a cable from headphone out to mic in. Turn the amp down first.</p>
+          <button id="run-test">Run test</button>
+          <p id="test-result" class="result"></p>
+        </div>
+
+        <button id="go-jam" class="primary big">Enter the room</button>
+      </div>
+    </section>
+
+    <!-- JAM -->
+    <section id="jam" class="screen" hidden>
+      <div class="jam-head">
+        <div>
+          <div class="label">Room</div>
+          <div class="room-code" data-room></div>
+        </div>
+        <button id="share">Share link</button>
+      </div>
+      <p id="status" class="status">Waiting for your partner…</p>
+
+      <div class="hud card">
+        <div class="hud-main">
+          <div class="dir">
+            <div class="label">Partner → you</div>
+            <div class="big-ms" id="in-total">–</div>
+          </div>
+          <div class="dir">
+            <div class="label">You → partner</div>
+            <div class="big-ms" id="out-total">–</div>
+          </div>
+        </div>
+        <div class="budget"><div id="budget-bar"></div><span class="budget-line" title="60 ms budget"></span></div>
+        <dl class="hud-grid">
+          <dt>Network RTT</dt><dd id="h-rtt">–</dd>
+          <dt>Jitter buffer</dt><dd id="h-jitter">–</dd>
+          <dt>Your output</dt><dd id="h-output">–</dd>
+          <dt>Partner capture</dt><dd id="h-pcap">–</dd>
+          <dt>Packet</dt><dd id="h-packet">–</dd>
+          <dt>Loss / late</dt><dd id="h-loss">–</dd>
+          <dt>Route</dt><dd id="h-route">–</dd>
+          <dt>Codec</dt><dd id="h-codec">–</dd>
+        </dl>
+        <p id="hud-warn" class="warn" hidden></p>
+      </div>
+
+      <div class="card">
+        <label>Partner volume <input id="remote-vol" type="range" min="0" max="2" step="0.05" value="1" /></label>
+        <div class="meter small"><div id="out-meter"></div></div>
+      </div>
+
+      <div class="card">
+        <h3>Metronome <small>(both phones click in sync)</small></h3>
+        <div class="row">
+          <input id="bpm" type="number" min="40" max="240" value="100" />
+          <span>BPM</span>
+          <button id="metro-toggle">Start</button>
+          <span id="beat" class="beat"></span>
+        </div>
+      </div>
+
+      <details class="card">
+        <summary>Advanced</summary>
+        <label class="check"><input id="guard" type="checkbox" checked /> Keep under 60&nbsp;ms (trade a rare glitch for latency)</label>
+        <label>Jitter buffer
+          <select id="jitter">
+            <option value="auto">Auto (lowest stable)</option>
+          </select>
+        </label>
+        <label>Codec
+          <select id="codec">
+            <option value="pcm16">PCM 16-bit (≈770 kbps, zero delay)</option>
+            <option value="mulaw8">μ-law 8-bit (≈385 kbps, zero delay)</option>
+            <option value="opus">Opus 2.5 ms (≈100 kbps, +5–7 ms)</option>
+          </select>
+        </label>
+        <label>Packet size
+          <select id="ppq">
+            <option value="1">2.7 ms (lowest latency)</option>
+            <option value="2">5.3 ms (fewer packets)</option>
+          </select>
+        </label>
+        <label class="check"><input id="compat" type="checkbox" /> Compatibility mode (standard WebRTC audio, higher latency)</label>
+      </details>
+
+      <div class="row end">
+        <button id="back-setup">Setup</button>
+        <button id="leave" class="danger">Leave</button>
+      </div>
+    </section>
+
+    <!-- GUIDE -->
+    <section id="guide" class="screen" hidden></section>
+  </main>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
