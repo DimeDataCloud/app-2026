@@ -1,0 +1,10 @@
+{
+  "name": "JamLink",
+  "short_name": "JamLink",
+  "description": "Low-latency 2-player guitar jam in the browser.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111317",
+  "theme_color": "#111317",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

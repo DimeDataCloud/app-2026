@@ -1,0 +1,23 @@
+name = "jamlink"
+main = "worker/index.ts"
+compatibility_date = "2025-09-01"
+
+# Static assets built by Vite. The Worker runs first for every request so it can
+# add the cross-origin isolation headers (COOP/COEP) that SharedArrayBuffer needs.
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+run_worker_first = true
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# SQLite-backed Durable Objects are included in the Workers free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+# Optional Cloudflare TURN fallback (1,000 GB/month free). Set with:
+#   npx wrangler secret put TURN_KEY_ID
+#   npx wrangler secret put TURN_KEY_API_TOKEN
