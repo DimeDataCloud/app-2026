@@ -7,8 +7,12 @@ export type CodecName = 'pcm16' | 'mulaw8' | 'opus';
 
 const CODEC_ID: Record<CodecName, number> = { pcm16: Codec.PCM16, mulaw8: Codec.MULAW8, opus: Codec.OPUS };
 
-/** Bytes queued in the DataChannel beyond which we drop instead of queueing (queue = latency). */
-const MAX_BUFFERED = 6 * 1024;
+/**
+ * Packets allowed to wait in the DataChannel send queue (~8 ms at 2.7 ms per
+ * packet). Beyond that we drop at the source: a queued packet is pure added
+ * latency, and the receiver's concealment handles a gap better than a delay.
+ */
+const MAX_QUEUED_PACKETS = 3;
 
 export interface LinkStats {
   sent: number;
@@ -82,14 +86,15 @@ export class AudioLink {
     const n = this.pendingCount;
     this.pendingCount = 0;
 
-    if (dc.bufferedAmount > MAX_BUFFERED) {
+    const frames = n * QUANTUM;
+    const bytesPer = this.codec === 'pcm16' ? 2 : 1;
+    const size = HEADER_BYTES + frames * bytesPer;
+    if (dc.bufferedAmount > size * MAX_QUEUED_PACKETS) {
       // Congested: a late packet is useless to the receiver, drop it here.
       this.stats.dropped++;
       return;
     }
-    const frames = n * QUANTUM;
-    const bytesPer = this.codec === 'pcm16' ? 2 : 1;
-    const buf = new ArrayBuffer(HEADER_BYTES + frames * bytesPer);
+    const buf = new ArrayBuffer(size);
     const view = new DataView(buf);
     writeHeader(view, {
       seq: this.pendingStart / QUANTUM,
@@ -108,7 +113,7 @@ export class AudioLink {
   private sendOpus(sampleTime: number, data: Uint8Array): void {
     const dc = this.dc;
     if (!dc || dc.readyState !== 'open') return;
-    if (dc.bufferedAmount > MAX_BUFFERED) {
+    if (dc.bufferedAmount > (HEADER_BYTES + data.length) * MAX_QUEUED_PACKETS) {
       this.stats.dropped++;
       return;
     }

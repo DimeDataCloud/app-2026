@@ -29,6 +29,39 @@ async function openPlayer(browser: Browser, room: string, query = ''): Promise<P
 const jam = (page: Page, fn: (j: Jam) => unknown) =>
   page.evaluate(`(${fn.toString()})(globalThis.__jam)`) as Promise<any>;
 
+/**
+ * End-to-end click latency A → B: A's capture worklet sees each click of the
+ * fake microphone, B's playout worklet renders it. Both pages share the
+ * machine clock, so the difference is the in-app path; B's reported output
+ * latency is added separately.
+ */
+async function measureClicks(a: Page, b: Page, ms = 6000) {
+  const now = 'performance.timeOrigin + performance.now()';
+  await a.evaluate(`(() => { const j = globalThis.__jam; j.cap = [];
+    j.session.engine.onSenderOnset = () => j.cap.push(${now});
+    j.session.engine.detectOnsets('sender', true, 0.3); })()`);
+  await b.evaluate(`(() => { const j = globalThis.__jam; j.out = [];
+    j.session.engine.onReceiverOnset = () => j.out.push(${now});
+    j.session.engine.detectOnsets('receiver', true, 0.3); })()`);
+  await a.waitForTimeout(ms);
+  const cap: number[] = await jam(a, (j) => j.cap);
+  const out: number[] = await jam(b, (j) => j.out);
+  const outputMs: number = await jam(b, (j) => j.session.engine.outputLatencyMs());
+  const lat: number[] = [];
+  for (const t of out) {
+    const c = cap.filter((x) => x <= t).at(-1);
+    if (c !== undefined && t - c < 400) lat.push(t - c);
+  }
+  lat.sort((x, y) => x - y);
+  const median = lat[lat.length >> 1] ?? Infinity;
+  const hud = await jam(b, (j) => j.session.hud());
+  const summary =
+    `click A→B in-app median ${median.toFixed(1)} ms (max ${(lat.at(-1) ?? NaN).toFixed(1)}, n=${lat.length})` +
+    ` + B output ${outputMs.toFixed(1)} ms | HUD inbound ${hud.inbound.total.toFixed(1)} ms,` +
+    ` jitter ${hud.inbound.jitterMs.toFixed(1)} ms, rtt ${hud.rttMs?.toFixed(2)} ms, loss ${hud.lossPct.toFixed(2)}%`;
+  return { median, outputMs, count: lat.length, summary };
+}
+
 test('two players connect and hear each other with low latency; a third is rejected', async ({ browser }) => {
   const room = newRoom();
   const a = await openPlayer(browser, room);
@@ -51,34 +84,10 @@ test('two players connect and hear each other with low latency; a third is rejec
   await expect(a.locator('#h-rtt')).toHaveText(/\d+(\.\d)? ms/, { timeout: 10_000 });
   await expect(a.locator('#in-total')).toHaveText(/\d+ ms/);
 
-  // End-to-end click latency A → B: A's capture worklet sees the click, B's
-  // playout worklet renders it. Both pages share the machine clock.
-  const now = 'performance.timeOrigin + performance.now()';
-  await a.evaluate(`(() => { const j = globalThis.__jam; j.cap = [];
-    j.session.engine.onSenderOnset = () => j.cap.push(${now});
-    j.session.engine.detectOnsets('sender', true, 0.3); })()`);
-  await b.evaluate(`(() => { const j = globalThis.__jam; j.out = [];
-    j.session.engine.onReceiverOnset = () => j.out.push(${now});
-    j.session.engine.detectOnsets('receiver', true, 0.3); })()`);
-  await a.waitForTimeout(6000);
-  const cap: number[] = await jam(a, (j) => j.cap);
-  const out: number[] = await jam(b, (j) => j.out);
-  const outLatency: number = await jam(b, (j) => j.session.engine.outputLatencyMs());
-  const lat: number[] = [];
-  for (const t of out) {
-    const c = cap.filter((x) => x <= t).at(-1);
-    if (c !== undefined && t - c < 400) lat.push(t - c);
-  }
-  lat.sort((x, y) => x - y);
-  const median = lat[lat.length >> 1]!;
-  const hud = await jam(b, (j) => j.session.hud());
-  console.log(
-    `click A→B in-app path: median ${median.toFixed(1)} ms, max ${lat.at(-1)!.toFixed(1)} ms over ${lat.length} clicks;` +
-      ` + B output ${outLatency.toFixed(1)} ms; HUD inbound total ${hud.inbound.total.toFixed(1)} ms,` +
-      ` jitter ${hud.inbound.jitterMs.toFixed(1)} ms, rtt ${hud.rttMs?.toFixed(2)} ms, loss ${hud.lossPct.toFixed(2)}%`,
-  );
-  expect(lat.length).toBeGreaterThanOrEqual(6);
-  expect(median + outLatency).toBeLessThan(30);
+  const pcm = await measureClicks(a, b);
+  console.log(`pcm16 ${pcm.summary}`);
+  expect(pcm.count).toBeGreaterThanOrEqual(6);
+  expect(pcm.median + pcm.outputMs).toBeLessThan(30);
 
   // A third player is turned away.
   const c = await openPlayer(browser, room);
@@ -105,6 +114,52 @@ test('audio also flows without SharedArrayBuffer (postMessage fallback)', async 
         throw e;
       });
   }
+});
+
+async function connectedPair(browser: Browser): Promise<[Page, Page]> {
+  const room = newRoom();
+  const a = await openPlayer(browser, room);
+  const b = await openPlayer(browser, room);
+  for (const p of [a, b]) {
+    await expect.poll(() => jam(p, (j) => j.session.hud().dcOpen), { timeout: 30_000 }).toBe(true);
+  }
+  return [a, b];
+}
+
+/** Peak level at the receiving page's speaker output (any path). */
+const outPeak = (p: Page) =>
+  jam(p, (j) => j.session.engine.levels(j.session.engine.outAnalyser, new Float32Array(4096)).peak);
+
+test('mu-law and WebCodecs Opus (2.5 ms frames) carry audio with low latency', async ({ browser }) => {
+  const [a, b] = await connectedPair(browser);
+  await a.waitForTimeout(500); // hello exchange tells A whether B decodes Opus
+  const supported = await a.evaluate(`globalThis.__jam.session.setCodec('opus').then(() => true, () => false)`);
+  test.skip(!supported, 'WebCodecs Opus unavailable in this browser build');
+  for (const c of ['mulaw8', 'opus'] as const) {
+    await a.evaluate(`globalThis.__jam.session.setCodec('${c}')`);
+    await a.waitForTimeout(1000);
+    const r = await measureClicks(a, b, 4000);
+    console.log(`${c} ${r.summary}`);
+    expect(r.count).toBeGreaterThanOrEqual(4);
+    expect(r.median + r.outputMs).toBeLessThan(c === 'opus' ? 40 : 30);
+  }
+  const before: number = await jam(b, (j) => j.session.link.stats.received);
+  await expect.poll(() => jam(b, (j) => j.session.link.stats.received), { timeout: 10_000 }).toBeGreaterThan(before + 300);
+  await expect(a.locator('#h-codec')).toHaveText(/opus/);
+  await b.waitForTimeout(600); // let a stats window pass that is all Opus
+  await expect.poll(() => jam(b, (j) => j.session.recv?.peak ?? 0), { timeout: 10_000 }).toBeGreaterThan(0.1);
+});
+
+test('compatibility mode switches both sides to a standard media track', async ({ browser }) => {
+  const [a, b] = await connectedPair(browser);
+  await a.click('details.card summary');
+  await a.check('#compat');
+  await expect.poll(() => jam(b, (j) => j.session.compat), { timeout: 10_000 }).toBe(true);
+  // DataChannel audio stops; sound keeps arriving over the RTP track.
+  await expect.poll(() => jam(b, (j) => j.session.peer.pc.getReceivers().some((r: any) => r.track?.kind === 'audio')),
+    { timeout: 15_000 }).toBe(true);
+  await expect.poll(() => outPeak(b), { timeout: 15_000, intervals: [50] }).toBeGreaterThan(0.05);
+  await expect(b.locator('#h-codec')).toHaveText(/compatibility/);
 });
 
 test('metronome start time is shared over the control channel', async ({ browser }) => {
