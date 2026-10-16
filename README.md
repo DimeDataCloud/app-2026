@@ -1,7 +1,11 @@
-# JamLink
+<h1 align="center">JamLink</h1>
 
-Low-latency, browser-only jamming for **two** guitarists. No install, no audio interface.
-It runs in a phone or laptop browser and is hosted for about **$0** on Cloudflare's free plan.
+<p align="center">Low-latency, browser-only jamming for two guitarists. No install, no audio interface.</p>
+
+JamLink runs in a phone or laptop browser and is hosted for about **$0** on Cloudflare's free plan.
+
+It is for two musicians who want to play together over the internet and need the delay between
+them kept as low as possible.
 
 The goal is to keep the one-way delay between the two players **under 60 ms**. On a decent
 connection within one country it is usually much lower.
@@ -71,6 +75,28 @@ latency (~11 ms here) for the total.
 
 **Out of the phone:** wired headphones, or the phone's headphone out → CODE AUX IN. Avoid Bluetooth.
 
+## Quick start
+
+Requires Node.js with npm. To run the full app locally, including signaling:
+
+```sh
+npm install
+npm run preview      # builds, then starts wrangler dev at http://localhost:8787
+```
+
+Open the URL in two browser windows (or on two devices), create a room in one, and join it from the other.
+
+## Configuration
+
+JamLink needs no configuration to run. The only settings are optional secrets for TURN.
+
+| Name | Where it is set | Required | Purpose |
+|---|---|---|---|
+| `TURN_KEY_ID` | `wrangler secret put` | No | Cloudflare Realtime TURN key ID. Enables the relay fallback. |
+| `TURN_KEY_API_TOKEN` | `wrangler secret put` | No | API token for the TURN key. Used only by the Worker, never sent to the browser. |
+
+Local development can use a `.dev.vars` file (git-ignored) for the same names.
+
 ## Develop
 
 ```sh
@@ -129,7 +155,8 @@ src/signaling.ts         WebSocket client with reconnect
 src/net/packet.ts        8-byte header, seq wrap
 src/net/link.ts          packetize/send, receive/decode, ping/pong
 src/audio/engine.ts      AudioContext graph, worklets, setSinkId, meters
-src/audio/*.worklet.ts   capture / playout worklets
+src/audio/sender.worklet.ts    capture worklet
+src/audio/receiver.worklet.ts  playout worklet
 src/audio/jitter.ts      adaptive jitter buffer, PLC, drift, latency cap
 src/audio/ring.ts        SharedArrayBuffer SPSC ring
 src/audio/codec.ts       pcm16 / μ-law
@@ -147,5 +174,20 @@ src/ui/                  screens, hookup guide
 optional uncompressed audio, manual jitter buffer). Native audio paths can be lower latency than
 any browser. JamLink's edge is zero install plus a guide built around the CODE. If a phone's
 browser audio path turns out too slow, SonoBus is a good baseline to compare against.
+
+## Status
+
+Version 0.1.0. The core two-player jam, codecs, latency HUD, metronome and test suite are in place.
+Phone USB audio (the CODE USB path) is not yet verified on real hardware. The app shows "USB Audio"
+if the device is detected.
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a pull request, run `npm run typecheck && npm test`
+and, for audio or networking changes, `npm run e2e`.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Dime Data.
 
 See [`docs/HANDOFF.md`](docs/HANDOFF.md) for the original research and plan.
