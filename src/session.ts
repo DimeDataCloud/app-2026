@@ -144,7 +144,7 @@ export class Session {
       this.log(`in ${m.type}${m.type === 'sdp' ? ':' + m.description.type : ''}`);
       this.sigChain = this.sigChain.then(() => this.onSignal(m)).catch((e) => console.warn('signal', e));
     };
-    void fetchIceServers();
+    void fetchIceServers(room);
     sig.connect();
     this.timers.push(setInterval(() => this.link?.ping(), 500));
     this.timers.push(setInterval(() => void this.tick(), 1000));
@@ -191,7 +191,7 @@ export class Session {
   private async createPeer(polite: boolean): Promise<void> {
     this.closePeer();
     this.setPhase('connecting');
-    const ice = await fetchIceServers();
+    const ice = await fetchIceServers(this.room ?? '');
     if (!this.sig) return;
     const peer = new Peer(this.sig, polite, ice);
     peer.log = (l) => this.log(l);

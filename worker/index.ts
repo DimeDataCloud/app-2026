@@ -42,7 +42,7 @@ async function turnServers(env: Env): Promise<RTCIceServerLike[]> {
           Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ ttl: 6 * 3600 }),
+        body: JSON.stringify({ ttl: 3600 }),
       },
     );
     if (!r.ok) return DEFAULT_ICE;
@@ -73,6 +73,15 @@ export default {
     }
 
     if (url.pathname === '/turn') {
+      // TURN credentials cost bandwidth, so only hand them to this app's own pages
+      // and only for a well-formed room code (the app has no accounts to check).
+      const site = request.headers.get('Sec-Fetch-Site');
+      const origin = request.headers.get('Origin');
+      const sameOrigin = site ? site === 'same-origin' : !origin || origin === url.origin;
+      const room = (url.searchParams.get('room') ?? '').toUpperCase();
+      if (!sameOrigin || !ROOM_RE.test(room)) {
+        return new Response('forbidden', { status: 403, headers: { 'Cache-Control': 'no-store' } });
+      }
       const iceServers = await turnServers(env);
       return withIsolation(
         Response.json({ iceServers }, { headers: { 'Cache-Control': 'no-store' } }),

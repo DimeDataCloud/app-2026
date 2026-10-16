@@ -12,10 +12,15 @@ export interface ConnInfo {
 const DEFAULT_ICE: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 
 let iceCache: Promise<RTCIceServer[]> | null = null;
+let iceRoom: string | null = null;
 
 /** STUN by default; the Worker adds Cloudflare TURN credentials when configured. */
-export function fetchIceServers(): Promise<RTCIceServer[]> {
-  iceCache ??= fetch('/turn')
+export function fetchIceServers(room: string): Promise<RTCIceServer[]> {
+  if (iceRoom !== room) {
+    iceRoom = room;
+    iceCache = null;
+  }
+  iceCache ??= fetch(`/turn?room=${encodeURIComponent(room)}`)
     .then((r) => (r.ok ? r.json() : { iceServers: DEFAULT_ICE }))
     .then((b: { iceServers: RTCIceServer[] }) => b.iceServers)
     .catch(() => DEFAULT_ICE);
