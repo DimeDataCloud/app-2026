@@ -8,7 +8,7 @@
 ## Context
 Two guitarists in the same country want to jam remotely and hear each other as close to real time as possible. One player uses a **Marshall CODE 50**. The app runs in a phone browser, with no native install and no audio interface required. It accepts input from the amp's output or the phone mic, and plays back through the speaker, headphones, the amp's AUX, or Bluetooth (with a warning).
 
-Repo `app-2026` is empty (README only), so this is a greenfield build.
+Repo `jamlink` (originally `app-2026`) started empty, so this was a greenfield build.
 
 User decisions: Cloudflare hosting, 2 players with peer-to-peer audio, same country (~15–35 ms network one-way). The follow-up ask was to find the **cheapest approach that doesn't compromise latency** and to learn from existing tools.
 
