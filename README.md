@@ -20,7 +20,7 @@ Signaling only: WebSocket ↔ Cloudflare Worker + Durable Object "Room" (max 2 p
 ```
 
 Standard WebRTC audio tracks (Opus plus the NetEQ jitter buffer, tuned for speech) measure
-60 ms at best and 80–180 ms typically. JamLink instead sends **raw 16-bit PCM in 2.7 ms packets
+60 ms at best and 80–180 ms typically. JamLink instead sends **raw 16-bit PCM in short packets
 over an unordered, no-retransmit DataChannel**. It plays the audio through its own jitter buffer
 in an AudioWorklet (the approach from Sacchetto et al., JAES 2022). WebRTC still provides NAT
 traversal and encryption for free.
@@ -33,7 +33,7 @@ JamLink measures each part and enforces the budget on the parts it controls:
 | Stage | How JamLink handles it |
 |---|---|
 | Capture | Echo cancellation, noise suppression and AGC are off. Smallest capture buffer requested. The **device loopback test** measures it. |
-| Packetization | 128 frames (2.7 ms) per packet by default. |
+| Packetization | 128 frames per packet by default. |
 | Send queue | A packet is dropped at the source if more than 3 are already queued, so a congested link causes a gap, never a growing delay. |
 | Network | Peer-to-peer, direct when possible. TURN relay only when NAT forces it. RTT is measured every 500 ms on the audio channel itself. |
 | Jitter buffer | Measures its actual slack each second and trims it to the minimum that avoids late packets (skip/insert quanta, single-sample drift correction). **Capped** so that capture + packet + network + buffer + output stays under 60 ms. Past the cap it accepts a rare concealed glitch instead of adding delay. Toggle "Keep under 60 ms" in Advanced. |
@@ -47,8 +47,8 @@ green < 40 ms, amber < 60 ms, red ≥ 60 ms. If you go over budget, it names the
 > for a slow phone is a laptop running Chrome or Firefox with wired headphones.
 
 Measured on localhost in headless Chromium (Playwright, see below): click capture → partner
-playout takes **~9–10 ms** in-app for PCM, ~13 ms for Opus. Add the browser-reported output
-latency (~11 ms here) for the total.
+playout takes **well under the 60 ms budget** in-app for PCM, and more for Opus. Add the browser-reported output
+latency for the total.
 
 ## Features
 
@@ -58,7 +58,7 @@ latency (~11 ms here) for the total.
 - Device loopback latency test (clicks out, listen back in).
 - Live latency HUD: RTT, jitter buffer, output latency, partner capture, loss/late, direct vs relay, codec.
 - Codecs: `pcm16` (≈770 kbps, default), `mulaw8` (≈385 kbps, zero added delay),
-  WebCodecs `opus` at 2.5 ms frames (≈100 kbps, +5–7 ms, for weak links).
+  WebCodecs `opus` (≈100 kbps, adds a little more delay, for weak links).
 - Synced metronome: start time is shared through a ping-derived clock offset. Each phone clicks
   locally, so the clicks carry no network delay.
 - Compatibility mode (standard Opus media track with munged SDP, `jitterBufferTarget = 0`),
